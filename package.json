@@ -7,16 +7,18 @@
   "scripts": {
     "clean": "rimraf -- node_modules dist",
     "clean:dist": "rimraf -- dist",
-    "build": "webpack"
+    "build": "webpack",
+    "build:prod": "webpack",
+    "dist": "rimraf -- dist && npm run build && npm run build:prod"
   },
   "dependencies": {
-    "d3": "^4.3.0",
-    "jquery": "^3.1.1",
-    "world-map": "0.0.2"
+    "d3": "^4.3.0",    
+    "world-map": "0.0.4"
   },
   "devDependencies": {
     "rimraf": "^2.5.4",
     "webpack": "^1.13.3",
-    "json-loader": "^0.5.4"
+    "json-loader": "^0.5.4",
+    "jquery": "^3.1.1"
   }
 }

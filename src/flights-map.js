@@ -1,30 +1,33 @@
 var d3       = require("d3");
 var WorldMap = require("world-map");
 
-function FlightsMap(parent, options) 
-{
-  options = options || {};
+function FlightsMap(containerId, options) 
+{ 
+  options           = options || {}; 
+  options.resources = options.resources || [];
 
-  WorldMap.call(this, parent, {
-    width:  800,
-    height: 400,
-    zoom:   true,
-    resources: [
-      { name: 'flights',  src: options.flights  },
-      { name: 'stations', src: options.stations, onload: FlightsMap.onload_stations }
-    ],
-    onload: FlightsMap.onload_map
-  });
+  if (options.flights)  options.resources.push({ name: 'flights',  src: options.flights });
+  if (options.stations) options.resources.push({ name: 'stations', src: options.stations });
 
-  this.show_voronoi = options.show_voronoi;
-  this.current_stations = [];
+  WorldMap.call(this, containerId, options);
 }
 
-FlightsMap.prototype             = Object.create(WorldMap.prototype);
-FlightsMap.prototype.constructor = FlightsMap;
 
-FlightsMap.onload_stations = function (map, stations) 
+FlightsMap.prototype                 = Object.create(WorldMap.prototype);
+FlightsMap.prototype.constructor     = FlightsMap;
+
+FlightsMap.prototype.currentStations = [];
+
+FlightsMap.prototype.options.zoom        = true;
+FlightsMap.prototype.options.showVoronoi = false;
+
+
+FlightsMap.prototype.options.onLoad = function (map) 
 {
+  var flights          = map.resources.flights;
+  var stations         = map.resources.stations;
+  var stations_by_iata = d3.map(stations, function (d) { return d.iata; });
+
   stations.forEach(function (d) 
   {
     d[0] = +d.longitude;
@@ -33,16 +36,8 @@ FlightsMap.onload_stations = function (map, stations)
     d.flights  = 0;
     return d;
   });
-}
 
-
-FlightsMap.onload_map = function(map) 
-{
-  var flights          = map.resources.flights;
-  var stations         = map.resources.stations;
-  var stations_by_iata = d3.map(stations, function(d) { return d.iata; });
-
-  flights.forEach(function(flight) 
+  flights.forEach(function (flight) 
   {
     var source = stations_by_iata.get(flight.origin) || {};
     var target = stations_by_iata.get(flight.destination) || {};
@@ -55,26 +50,34 @@ FlightsMap.onload_map = function(map)
   });
   
   map.voronoi  = d3.voronoi().extent([[0, 0], [map.width, map.height]]);
-  map.stations = stations.filter(function(d, i) { return d.arcs.coordinates.length; });
+  map.stations = stations.filter(function (d, i) { return d.arcs.coordinates.length; });
   map.loaded   = true;
 
   map.on("mousemove", function () { map.mousemove(this); });
-
   map.draw();
 }
 
 
-FlightsMap.prototype.draw_stations = function()
+FlightsMap.prototype.options.onDraw = function (map) 
 {
-  // transform = transform || {x: 0, y: 0, k: 1};
+  if (!map.loaded) return;
 
+  map.drawStations();
+  map.drawVoronoi();
+  map.drawFlights();
+}
+
+
+FlightsMap.prototype.drawStations = function ()
+{
   for (var i = 0; i < this.stations.length; ++i)
   {
     var station = this.stations[i];
     var coor    = this.projection([station.longitude, station.latitude]);
     var x       = coor[0];
-    var y       = coor[1]; 
-    var r       = dots_radius(station)*this.last_transform.k;
+    var y       = coor[1];
+    var r = Math.sqrt(station.flights/4); 
+        r = r <= 1? 1: (r > 50? 50: r);
     var color   = station.flights? "darkred": "#999900";
 
     this.context.beginPath();
@@ -85,31 +88,42 @@ FlightsMap.prototype.draw_stations = function()
   }
 }
 
-function dots_radius(d, s) { var r = Math.sqrt(d.flights/4); return r <= 1? 1: (r > 50? 50: r); };
 
-function is_visible(d, width, height) { return d[0] >= 0 && d[0] <= width && d[1] >= 0 && d[1] <= height; }
-
-
-FlightsMap.prototype.get_stations_voronoi = function () 
+FlightsMap.prototype.getStationsVoronoi = function (real) 
 {
-  var map                  = this;
-  var stations             = this.stations.map(this.projection);
-      map.visible_stations = [];
-  var visible_stations     = stations.filter(function(d, i) 
-  { 
-    var visible = is_visible(d, map.width, map.height);
-    if (visible) map.visible_stations.push(map.stations[i]);    
+  var $this = this;
+  this.visible_stations = [];
+
+  var real_stations_pos = this.stations.map(function (d, i)
+  {
+    var coor = $this.projection([d.longitude, d.latitude]);
+    var x    = coor[0] * $this.transform.k;
+    var y    = coor[1] * $this.transform.k + $this.transform.y;
+
+    return [x, y];
+  });
+
+  var real_visible_stations = real_stations_pos.filter(function (d, i)
+  {
+    var visible = d[0] >= 0 && d[0] <= $this.width && d[1] >= 0 && d[1] <= $this.height;
+    
+    if (visible) $this.visible_stations.push($this.stations[i]);
+
     return visible;
-  });  
-  var poly_voronoi         = this.voronoi.polygons(visible_stations);
+  });
+
+  var stations_pos = real? real_visible_stations: this.visible_stations.map(this.projection);
+  var poly_voronoi = this.voronoi.polygons(stations_pos);
 
   return poly_voronoi;
 }
 
 
-FlightsMap.prototype.draw_voronoi = function () 
+FlightsMap.prototype.drawVoronoi = function () 
 {
-  var poly_voronoi = this.get_stations_voronoi();
+  if (!this.options.showVoronoi) return;
+
+  var poly_voronoi = this.getStationsVoronoi();
 
   for (var i = 0; i < poly_voronoi.length; ++i)
   {
@@ -122,6 +136,7 @@ FlightsMap.prototype.draw_voronoi = function ()
     {
       this.context.lineTo(cell[j][0], cell[j][1]);
     }
+
     this.context.closePath();    
     this.context.strokeStyle = "#000";
     this.context.stroke();
@@ -129,12 +144,12 @@ FlightsMap.prototype.draw_voronoi = function ()
 }
 
 
-FlightsMap.prototype.draw_flights = function()
+FlightsMap.prototype.drawFlights = function ()
 {
-  if (!this.current_stations.length) return;
+  if (!this.currentStations.length) return;
 
   var $this    = this;
-  var stations = this.current_stations;
+  var stations = this.currentStations;
 
   if (stations.length == 1)
   {
@@ -153,20 +168,9 @@ FlightsMap.prototype.draw_flights = function()
 }
 
 
-FlightsMap.prototype.draw = function () 
+FlightsMap.prototype.voronoiGetStation = function (x, y) 
 {
-  WorldMap.prototype.draw.call(this);
-  
-  if (!this.loaded)      return;  
-                         this.draw_stations();
-  if (this.show_voronoi) this.draw_voronoi();
-                         this.draw_flights();    
-}
-
-
-FlightsMap.prototype.voronoi_get_station = function (x, y) 
-{
-  var poly_voronoi = this.get_stations_voronoi();
+  var poly_voronoi = this.getStationsVoronoi(true);
 
   for (var i = 0; i < poly_voronoi.length; ++i)
   {
@@ -190,44 +194,38 @@ FlightsMap.prototype.voronoi_get_station = function (x, y)
 }
 
 
-FlightsMap.prototype.mousemove = function(event) 
+FlightsMap.prototype.mousemove = function (event) 
 {
-  if (this.current_stations.length > 1) return;
+  if (this.currentStations.length > 1) return;
 
   var mouse   = d3.mouse(event);
-  this.mouse = mouse;
-  var station = this.voronoi_get_station(mouse[0], mouse[1]);
+  var station = this.voronoiGetStation(mouse[0], mouse[1]);
 
-  if (!station)                            return;
-  if (station == this.current_stations[0]) return;
+  if (!station)                           return;
+  if (station == this.currentStations[0]) return;
 
-  this.set_station(station);
+  this.setStation(station);
   this.draw();  
 }
 
 
-FlightsMap.prototype.set_station = function(station) 
+FlightsMap.prototype.setStation = function (station) 
 {
-  this.current_stations = [station];  
+  this.currentStations = [station];  
 }
 
 
-FlightsMap.prototype.show_schedules = function () 
+FlightsMap.prototype.showSchedules = function () 
 {
-  this.current_stations = this.stations; 
+  this.currentStations = this.stations; 
   this.draw(); 
 }
 
 
 FlightsMap.prototype.reset = function () 
 {
-  this.current_stations = [];
-  this.reset_zoom();
-
-  this.projection.rotate([0, 0, 0]);
-  this.projection.scale(this.height/Math.PI);
-  this.projection.translate([this.width/2, this.height/2]);
-  this.draw();
+  this.currentStations = [];
+  this.resetZoom();
 }
 
 module.exports = FlightsMap;

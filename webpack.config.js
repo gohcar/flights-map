@@ -1,15 +1,17 @@
-const webpack = require("webpack");
-const config  = {};
+const webpack     = require("webpack");
+const EVENT       = process.env.npm_lifecycle_event;
+const PROD        = EVENT.includes('prod');
+const config      = {};
+const libraryName = 'FlightsMap';
+const filename    = 'flights-map';
 
-config.entry = 
-{
-  'main': './src/main.js'
-};
+config.entry = './src/'+filename+'.js'
 
 config.output =
 {
+  library: libraryName,
   path: './dist',
-  filename: '[name].js'
+  filename: PROD? filename+'.min.js': filename+'.js'
 };
 
 config.module =
@@ -22,5 +24,21 @@ config.module =
     }
   ]
 };
+
+config.plugins = [];
+
+if (PROD) 
+{
+  config.plugins.push(
+    new webpack.NoErrorsPlugin(),
+    new webpack.optimize.UglifyJsPlugin(
+    {
+      beautify: false,
+      comments: false
+    })
+  );
+}
+
+console.log(PROD? 'PRODUCTION BUILD': 'DEVELOPMENT BUILD');
 
 module.exports = config;
