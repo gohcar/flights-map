@@ -16708,8 +16708,10 @@ var FlightsMap =
 
 	  this.setOptions(options);
 
+	  var maxWidth = this.options.height*2;
+
 	  this.container        = d3.select("#"+containerId);
-	  this.width            = this.options.width;
+	  this.width            = maxWidth < this.options.width? maxWidth: this.options.width;
 	  this.height           = this.options.height;
 	  this.initialScale     = this.height/Math.PI;
 	  this.initialTranslate = [this.width/2, this.height/2];
